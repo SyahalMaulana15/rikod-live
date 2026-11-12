@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="id" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rikod Live - JKT48 IDN Live Auto Recorder</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        jkt: {
+                            50: '#fff1f2',
+                            100: '#ffe4e6',
+                            500: '#f43f5e',
+                            600: '#e11d48',
+                            700: '#be123c',
+                            800: '#9f1239',
+                            900: '#881337',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <!-- HLS.js for Live Stream Preview -->
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col font-sans antialiased selection:bg-rose-600 selection:text-white">
+
+    <!-- Top Navigation Bar -->
+    <header class="border-b border-slate-800/80 bg-slate-900/70 backdrop-blur sticky top-0 z-40">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+            <!-- Brand -->
+            <div class="flex items-center space-x-3">
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-rose-600 to-rose-400 flex items-center justify-center shadow-lg shadow-rose-900/30">
+                    <i class="fa-solid fa-record-vinyl text-white text-xl animate-spin" style="animation-duration: 8s;"></i>
+                </div>
+                <div>
+                    <div class="flex items-center space-x-2">
+                        <span class="font-extrabold text-xl tracking-tight text-white">Rikod<span class="text-rose-500">Live</span></span>
+                        <span class="text-xs bg-rose-500/20 text-rose-400 font-semibold px-2 py-0.5 rounded-full border border-rose-500/30">JKT48 Archiver</span>
+                    </div>
+                    <p class="text-[11px] text-slate-400">IDN App Live Stream Recorder & Cloud Storage</p>
+                </div>
+            </div>
+
+            <!-- Header Quick Stats -->
+            <div class="hidden md:flex items-center space-x-4 text-xs">
+                <!-- Monitor Pulse -->
+                <div class="flex items-center space-x-2 bg-slate-800/70 px-3 py-1.5 rounded-lg border border-slate-700/60">
+                    <span class="relative flex h-2 w-2">
+                        <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                        <span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                    </span>
+                    <span class="text-slate-300">Monitor: <strong class="text-emerald-400 font-medium">Aktif</strong></span>
+                </div>
+
+                <!-- Active Recording Count -->
+                <div id="stat-active-badge" class="flex items-center space-x-2 bg-slate-800/70 px-3 py-1.5 rounded-lg border border-slate-700/60">
+                    <i class="fa-solid fa-circle text-rose-500 text-[10px] animate-pulse"></i>
+                    <span class="text-slate-300">Merekam: <strong id="stat-recording-count" class="text-white font-medium">0</strong></span>
+                </div>
+
+                <!-- Storage Gauge -->
+                <div class="flex items-center space-x-2 bg-slate-800/70 px-3 py-1.5 rounded-lg border border-slate-700/60">
+                    <i class="fa-solid fa-hard-drive text-sky-400"></i>
+                    <span class="text-slate-300">Penyimpanan: <strong id="stat-free-disk" class="text-sky-300 font-medium">-- GB</strong></span>
+                </div>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="flex items-center space-x-2">
+                <button onclick="forceRefreshLive()" id="btn-refresh" class="flex items-center space-x-2 px-3 py-2 text-xs font-medium rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition">
+                    <i class="fa-solid fa-arrows-rotate" id="refresh-icon"></i>
+                    <span class="hidden sm:inline">Periksa Live</span>
+                </button>
+                <button onclick="openManualRecordModal()" class="flex items-center space-x-2 px-3 py-2 text-xs font-medium rounded-lg bg-rose-600 hover:bg-rose-500 text-white shadow-md shadow-rose-900/30 transition">
+                    <i class="fa-solid fa-plus"></i>
+                    <span class="hidden sm:inline">Rekam Manual</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Navigation Tabs -->
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 border-t border-slate-800/60">
+            <nav class="flex space-x-2 sm:space-x-8 overflow-x-auto py-2.5 text-sm font-medium">
+                <button onclick="switchTab('live')" id="tab-btn-live" class="nav-tab active flex items-center space-x-2 px-3 py-1.5 rounded-lg text-rose-400 bg-rose-500/10 border border-rose-500/20">
+                    <i class="fa-solid fa-broadcast-tower"></i>
+                    <span>Live Sekarang</span>
+                    <span id="tab-live-count" class="bg-rose-500 text-white text-[10px] px-1.5 py-0.2 rounded-full font-bold ml-1">0</span>
+                </button>
+                <button onclick="switchTab('active')" id="tab-btn-active" class="nav-tab flex items-center space-x-2 px-3 py-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800/60">
+                    <i class="fa-solid fa-record-vinyl"></i>
+                    <span>Sedang Merekam</span>
+                    <span id="tab-recording-badge" class="hidden bg-rose-600 text-white text-[10px] px-1.5 py-0.2 rounded-full font-bold ml-1">0</span>
+                </button>
+                <button onclick="switchTab('recordings')" id="tab-btn-recordings" class="nav-tab flex items-center space-x-2 px-3 py-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800/60">
+                    <i class="fa-solid fa-folder-open"></i>
+                    <span>Galeri Rekaman</span>
+                </button>
+                <button onclick="switchTab('members')" id="tab-btn-members" class="nav-tab flex items-center space-x-2 px-3 py-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800/60">
+                    <i class="fa-solid fa-users"></i>
+                    <span>Watchlist Member</span>
+                </button>
+                <button onclick="switchTab('settings')" id="tab-btn-settings" class="nav-tab flex items-center space-x-2 px-3 py-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800/60">
+                    <i class="fa-solid fa-gear"></i>
+                    <span>Pengaturan</span>
+                </button>
+            </nav>
+        </div>
+    </header>
+
+    <!-- Main Content Container -->
+    <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+
+        <!-- ================= TAB 1: LIVE SEKARANG ================= -->
+        <section id="tab-content-live" class="tab-pane">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-slate-800 gap-3">
+                <div>
+                    <h1 class="text-xl font-bold text-white flex items-center space-x-2">
+                        <span>Siaran Langsung IDN App</span>
+                        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-rose-500/10 text-rose-400 border border-rose-500/20">
+                            Auto-Detect JKT48
+                        </span>
+                    </h1>
+                    <p class="text-xs text-slate-400 mt-0.5">Memantau member JKT48 yang sedang siaran di IDN App secara otomatis.</p>
+                </div>
+
+                <div class="flex items-center space-x-3 text-xs">
+                    <label class="flex items-center space-x-2 cursor-pointer bg-slate-900 border border-slate-800 px-3 py-2 rounded-lg hover:border-slate-700">
+                        <input type="checkbox" id="filter-jkt48-only" checked onchange="renderLiveStreams()" class="rounded bg-slate-800 border-slate-700 text-rose-600 focus:ring-rose-500">
+                        <span class="text-slate-300 font-medium">Hanya Tampilkan JKT48</span>
+                    </label>
+                </div>
+            </div>
+
+            <!-- Live Streams Grid -->
+            <div id="live-streams-container" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 mt-6">
+                <!-- Dynamically rendered -->
+                <div class="col-span-full py-16 text-center text-slate-500">
+                    <i class="fa-solid fa-spinner fa-spin text-3xl mb-3 text-rose-500"></i>
+                    <p class="text-sm">Sedang memuat siaran langsung IDN Live...</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ================= TAB 2: SEDANG MEREKAM ================= -->
+        <section id="tab-content-active" class="tab-pane hidden">
+            <div class="flex items-center justify-between pb-4 border-b border-slate-800">
+                <div>
+                    <h1 class="text-xl font-bold text-white">Sesi Perekaman Aktif</h1>
+                    <p class="text-xs text-slate-400 mt-0.5">Daftar siaran yang sedang direkam ke penyimpanan lokal atau cloud.</p>
+                </div>
+            </div>
+
+            <div id="active-recordings-container" class="space-y-4 mt-6">
+                <!-- Dynamically rendered -->
+                <div class="py-16 text-center text-slate-500 bg-slate-900/50 rounded-2xl border border-slate-800/80">
+                    <i class="fa-solid fa-record-vinyl text-4xl mb-3 text-slate-600"></i>
+                    <p class="text-sm font-medium">Tidak ada proses perekaman yang sedang berjalan.</p>
+                    <p class="text-xs text-slate-500 mt-1">Sesi akan otomatis muncul jika ada member live yang masuk ke watchlist auto-record.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ================= TAB 3: GALERI REKAMAN ================= -->
+        <section id="tab-content-recordings" class="tab-pane hidden">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-slate-800 gap-3">
+                <div>
+                    <h1 class="text-xl font-bold text-white">Galeri Hasil Rekaman</h1>
+                    <p class="text-xs text-slate-400 mt-0.5">Daftar arsip rekaman video siaran langsung yang tersimpan.</p>
+                </div>
+
+                <!-- Search and Stats -->
+                <div class="flex items-center space-x-2">
+                    <div class="relative">
+                        <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-slate-500 text-xs"></i>
+                        <input type="text" id="recordings-search" oninput="filterRecordings()" placeholder="Cari nama member/judul..." class="bg-slate-900 border border-slate-800 text-slate-200 text-xs rounded-lg pl-8 pr-3 py-2 w-48 sm:w-64 focus:outline-none focus:border-rose-500">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Recordings List Table / Cards -->
+            <div class="mt-6 overflow-hidden rounded-xl border border-slate-800 bg-slate-900/40">
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-xs text-slate-300">
+                        <thead class="bg-slate-900/90 text-[11px] uppercase tracking-wider text-slate-400 border-b border-slate-800">
+                            <tr>
+                                <th class="px-4 py-3">Member & Judul</th>
+                                <th class="px-4 py-3">Waktu</th>
+                                <th class="px-4 py-3">Durasi</th>
+                                <th class="px-4 py-3">Ukuran</th>
+                                <th class="px-4 py-3">Status</th>
+                                <th class="px-4 py-3">Penyimpanan Cloud</th>
+                                <th class="px-4 py-3 text-right">Aksi</th>
+                            </tr>
+                        </thead>
+                        <tbody id="recordings-table-body" class="divide-y divide-slate-800/60">
+                            <!-- Dynamically loaded -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- ================= TAB 4: WATCHLIST MEMBER ================= -->
+        <section id="tab-content-members" class="tab-pane hidden">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-slate-800 gap-3">
+                <div>
+                    <h1 class="text-xl font-bold text-white">Watchlist Member JKT48</h1>
+                    <p class="text-xs text-slate-400 mt-0.5">Atur member mana saja yang akan direkam secara otomatis ketika mereka memulai siaran langsung.</p>
+                </div>
+
+                <div class="flex items-center space-x-3">
+                    <button onclick="openAddMemberModal()" class="flex items-center space-x-2 px-3 py-2 text-xs font-medium rounded-lg bg-rose-600 hover:bg-rose-500 text-white shadow-md shadow-rose-900/30 transition">
+                        <i class="fa-solid fa-user-plus"></i>
+                        <span>Tambah Member / Creator</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Master Toggle & Search -->
+            <div class="mt-4 p-4 rounded-xl bg-slate-900 border border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-4">
+                <div class="flex items-center space-x-3">
+                    <div class="w-8 h-8 rounded-lg bg-rose-500/10 text-rose-400 flex items-center justify-center">
+                        <i class="fa-solid fa-bolt"></i>
+                    </div>
+                    <div>
+                        <p class="text-xs font-semibold text-white">Auto-Record Semua Member JKT48</p>
+                        <p class="text-[11px] text-slate-400">Jika diaktifkan, setiap siaran dari member JKT48 mana pun akan otomatis direkam.</p>
+                    </div>
+                </div>
+
+                <label class="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" id="master-auto-record" onchange="toggleMasterAutoRecord(this.checked)" class="sr-only peer">
+                    <div class="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-rose-600"></div>
+                </label>
+            </div>
+
+            <!-- Member Grid -->
+            <div class="mt-4 flex items-center justify-between">
+                <input type="text" id="member-search" oninput="filterMembersList()" placeholder="Cari nama atau username..." class="bg-slate-900 border border-slate-800 text-slate-200 text-xs rounded-lg px-3 py-2 w-full max-w-sm focus:outline-none focus:border-rose-500">
+                <span id="member-count-info" class="text-xs text-slate-400">Total: 0 Member</span>
+            </div>
+
+            <div id="members-grid" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 mt-4">
+                <!-- Dynamically populated -->
+            </div>
+        </section>
+
+        <!-- ================= TAB 5: PENGATURAN ================= -->
+        <section id="tab-content-settings" class="tab-pane hidden">
+            <div class="pb-4 border-b border-slate-800">
+                <h1 class="text-xl font-bold text-white">Pengaturan Aplikasi</h1>
+                <p class="text-xs text-slate-400 mt-0.5">Konfigurasi penyimpanan lokal, integrasi cloud storage, dan webhook pemberitahuan.</p>
+            </div>
+
+            <form id="settings-form" onsubmit="saveAppSettings(event)" class="mt-6 space-y-6 max-w-4xl">
+                <!-- 1. General & Storage -->
+                <div class="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4">
+                    <h3 class="text-sm font-semibold text-rose-400 uppercase tracking-wider flex items-center space-x-2">
+                        <i class="fa-solid fa-hdd"></i>
+                        <span>Penyimpanan Lokal & Engine</span>
+                    </h3>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-xs font-medium text-slate-300 mb-1">Folder Penyimpanan Rekaman</label>
+                            <input type="text" id="setting-storage-path" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-rose-500" placeholder="./recordings">
+                            <p class="text-[11px] text-slate-500 mt-1">Folder lokal tempat file video rekaman disimpan.</p>
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-medium text-slate-300 mb-1">Engine Perekam</label>
+                            <select id="setting-engine" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-rose-500">
+                                <option value="native">Native Python HLS Engine (Bawaan, Tanpa Eksternal)</option>
+                                <option value="ytdlp">yt-dlp (Mendukung rekaman langsung MP4)</option>
+                                <option value="ffmpeg">FFmpeg (Jika terinstall di sistem PATH)</option>
+                            </select>
+                            <p class="text-[11px] text-slate-500 mt-1">Pilih engine yang digunakan untuk menangkap video stream.</p>
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-medium text-slate-300 mb-1">Interval Pengecekan Siaran (Detik)</label>
+                            <input type="number" id="setting-poll-interval" min="5" max="300" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-rose-500" value="20">
+                            <p class="text-[11px] text-slate-500 mt-1">Frekuensi aplikasi memeriksa apakah member JKT48 sedang live.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 2. Cloud Storage -->
+                <div class="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4">
+                    <h3 class="text-sm font-semibold text-sky-400 uppercase tracking-wider flex items-center space-x-2">
+                        <i class="fa-solid fa-cloud-arrow-up"></i>
+                        <span>Integrasi Cloud Storage</span>
+                    </h3>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-xs font-medium text-slate-300 mb-1">Penyedia Cloud</label>
+                            <select id="setting-cloud-provider" onchange="onCloudProviderChange(this.value)" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-sky-500">
+                                <option value="none">Tidak Ada (Hanya Simpan Lokal)</option>
+                                <option value="gdrive">Google Drive (via Service Account / API)</option>
+                                <option value="rclone">Rclone (Sync ke Google Drive, OneDrive, S3, dll)</option>
+                                <option value="s3">S3 / Cloudflare R2 / MinIO</option>
+                            </select>
+                        </div>
+
+                        <div class="flex items-center space-x-6 pt-5">
+                            <label class="flex items-center space-x-2 cursor-pointer">
+                                <input type="checkbox" id="setting-cloud-auto-upload" class="rounded bg-slate-800 border-slate-700 text-sky-600 focus:ring-sky-500">
+                                <span class="text-xs text-slate-300 font-medium">Auto-Upload setelah rekaman selesai</span>
+                            </label>
+
+                            <label class="flex items-center space-x-2 cursor-pointer">
+                                <input type="checkbox" id="setting-cloud-delete-after" class="rounded bg-slate-800 border-slate-700 text-rose-600 focus:ring-rose-500">
+                                <span class="text-xs text-slate-300 font-medium">Hapus file lokal setelah di-upload</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Google Drive Settings Form -->
+                    <div id="cloud-form-gdrive" class="space-y-3 pt-3 border-t border-slate-800/80">
+                        <h4 class="text-xs font-semibold text-slate-200">Konfigurasi Google Drive</h4>
+                        <div class="grid grid-cols-1 gap-3">
+                            <div>
+                                <label class="block text-xs text-slate-400 mb-1">Google Drive Folder ID (Tujuan)</label>
+                                <input type="text" id="setting-gdrive-folder-id" placeholder="1a2b3c4d5e6f7g8h9..." class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-sky-500">
+                                <p class="text-[11px] text-slate-500 mt-1">Dapatkan dari URL folder Google Drive Anda: drive.google.com/drive/folders/<strong>[FOLDER_ID]</strong></p>
+                            </div>
+                            <div>
+                                <label class="block text-xs text-slate-400 mb-1">Service Account JSON atau Path ke file kredensial</label>
+                                <textarea id="setting-gdrive-service-json" rows="3" placeholder='{"type": "service_account", "project_id": "...", ...}' class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-xs font-mono text-slate-300 focus:outline-none focus:border-sky-500"></textarea>
+                                <p class="text-[11px] text-slate-500 mt-1">Paste isi file service_account.json dari Google Cloud Console atau masukkan path file.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Rclone Settings Form -->
+                    <div id="cloud-form-rclone" class="space-y-3 pt-3 border-t border-slate-800/80 hidden">
+                        <h4 class="text-xs font-semibold text-slate-200">Konfigurasi Rclone</h4>
+                        <div>
+                            <label class="block text-xs text-slate-400 mb-1">Rclone Destination Remote:Path</label>
+                            <input type="text" id="setting-rclone-remote" placeholder="gdrive:JKT48_Live" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-sky-500">
+                            <p class="text-[11px] text-slate-500 mt-1">Contoh: <code>gdrive:JKT48_Recordings</code> atau <code>onedrive:LiveArchive</code></p>
+                        </div>
+                    </div>
+
+                    <!-- S3 Settings Form -->
+                    <div id="cloud-form-s3" class="space-y-3 pt-3 border-t border-slate-800/80 hidden">
+                        <h4 class="text-xs font-semibold text-slate-200">Konfigurasi S3 / Cloudflare R2</h4>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            <div>
+                                <label class="block text-xs text-slate-400 mb-1">Endpoint URL (Untuk Cloudflare R2 / MinIO)</label>
+                                <input type="text" id="setting-s3-endpoint" placeholder="https://<account_id>.r2.cloudflarestorage.com" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none">
+                            </div>
+                            <div>
+                                <label class="block text-xs text-slate-400 mb-1">Bucket Name</label>
+                                <input type="text" id="setting-s3-bucket" placeholder="jkt48-recordings" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none">
+                            </div>
+                            <div>
+                                <label class="block text-xs text-slate-400 mb-1">Access Key ID</label>
+                                <input type="text" id="setting-s3-access" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none">
+                            </div>
+                            <div>
+                                <label class="block text-xs text-slate-400 mb-1">Secret Access Key</label>
+                                <input type="password" id="setting-s3-secret" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 3. Webhook Notifications -->
+                <div class="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4">
+                    <h3 class="text-sm font-semibold text-emerald-400 uppercase tracking-wider flex items-center space-x-2">
+                        <i class="fa-solid fa-bell"></i>
+                        <span>Pemberitahuan Webhook (Discord & Telegram)</span>
+                    </h3>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div class="col-span-full">
+                            <label class="block text-xs font-medium text-slate-300 mb-1">Discord Webhook URL</label>
+                            <input type="text" id="setting-discord-webhook" placeholder="https://discord.com/api/webhooks/..." class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-emerald-500">
+                            <p class="text-[11px] text-slate-500 mt-1">Kirim notifikasi embed saat member live dan rekaman selesai ke channel Discord.</p>
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-medium text-slate-300 mb-1">Telegram Bot Token</label>
+                            <input type="text" id="setting-telegram-token" placeholder="123456789:ABCdefGhIJKlmNoPQ..." class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-emerald-500">
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-medium text-slate-300 mb-1">Telegram Chat ID</label>
+                            <input type="text" id="setting-telegram-chat" placeholder="-100123456789 atau user ID" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-emerald-500">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex justify-end space-x-3">
+                    <button type="submit" class="px-5 py-2.5 bg-rose-600 hover:bg-rose-500 text-white rounded-lg text-xs font-semibold shadow-lg shadow-rose-900/30 transition">
+                        <i class="fa-solid fa-floppy-disk mr-1.5"></i> Simpan Semua Pengaturan
+                    </button>
+                </div>
+            </form>
+        </section>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="border-t border-slate-800/80 bg-slate-950 py-4 text-center text-xs text-slate-500">
+        <p>Rikod Live &bull; JKT48 IDN App Live Stream Archiver &bull; Siaran otomatis direkam & diarsipkan dengan aman.</p>
+    </footer>
+
+    <!-- ================= MODALS ================= -->
+
+    <!-- Video Player Modal -->
+    <div id="player-modal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm hidden p-2 sm:p-4">
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-5xl p-4 shadow-2xl flex flex-col max-h-[95vh]">
+            <div class="flex items-center justify-between pb-3 border-b border-slate-800 flex-shrink-0">
+                <div class="flex items-center space-x-2">
+                    <span id="player-badge" class="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-500 text-white uppercase">PREVIEW</span>
+                    <h3 id="player-title" class="text-sm font-semibold text-white truncate max-w-md">Video Player</h3>
+                </div>
+                <button onclick="closePlayerModal()" class="text-slate-400 hover:text-white text-lg">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+
+            <!-- Content Area: Video on Left, Chat on Right -->
+            <div class="flex flex-col lg:flex-row gap-4 mt-3 flex-1 min-h-0 overflow-hidden">
+                <!-- Video Section -->
+                <div class="flex-1 flex flex-col justify-center bg-black rounded-lg overflow-hidden min-h-[240px] relative">
+                    <video id="main-video-player" controls class="w-full h-full object-contain max-h-[65vh]"></video>
+                </div>
+
+                <!-- Chat & Gift Replay Panel (Visible for Recording Playback) -->
+                <div id="chat-replay-panel" class="w-full lg:w-80 flex flex-col bg-slate-950 border border-slate-800 rounded-lg p-3 hidden flex-shrink-0">
+                    <div class="flex items-center justify-between pb-2 border-b border-slate-800 mb-2">
+                        <div class="flex items-center space-x-2">
+                            <i class="fa-solid fa-comments text-rose-500 text-xs"></i>
+                            <span class="text-xs font-semibold text-white">Komentar & Gift</span>
+                        </div>
+                        <span id="chat-total-count" class="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-300 font-mono">0</span>
+                    </div>
+
+                    <!-- Search Box for User Comments -->
+                    <div class="relative mb-2">
+                        <i class="fa-solid fa-magnifying-glass absolute left-2.5 top-2.5 text-slate-500 text-xs"></i>
+                        <input type="text" id="chat-search-input" placeholder="Cari komentar atau nama..." 
+                               class="w-full pl-8 pr-3 py-1.5 bg-slate-900 border border-slate-800 rounded text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-rose-500"
+                               oninput="filterComments(this.value)">
+                    </div>
+
+                    <!-- Comments List Container (Scrollable) -->
+                    <div id="chat-list-container" class="flex-1 overflow-y-auto space-y-1.5 pr-1 max-h-[50vh] lg:max-h-[380px] text-xs">
+                        <!-- Populated by JS -->
+                    </div>
+
+                    <!-- Empty state -->
+                    <div id="chat-empty-state" class="hidden text-center py-8 text-slate-500 text-xs">
+                        <i class="fa-regular fa-comment-dots text-xl mb-1 text-slate-600 block"></i>
+                        <span>Tidak ada komentar yang cocok</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex items-center justify-between pt-3 text-xs text-slate-400 flex-shrink-0">
+                <span id="player-info">--</span>
+                <button onclick="closePlayerModal()" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-white rounded-lg">
+                    Tutup
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Manual Record Modal -->
+    <div id="manual-record-modal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm hidden">
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-md p-5 shadow-2xl mx-4">
+            <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+                <h3 class="text-sm font-semibold text-white flex items-center space-x-2">
+                    <i class="fa-solid fa-circle-play text-rose-500"></i>
+                    <span>Rekam Live Stream Manual</span>
+                </h3>
+                <button onclick="closeManualRecordModal()" class="text-slate-400 hover:text-white">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+
+            <form onsubmit="submitManualRecord(event)" class="space-y-4 mt-4">
+                <div>
+                    <label class="block text-xs font-medium text-slate-300 mb-1">Nama Member / Streamer (Opsional)</label>
+                    <input type="text" id="manual-creator-name" placeholder="Contoh: Freya Jayawardana" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-rose-500">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-300 mb-1">Judul Siaran (Opsional)</label>
+                    <input type="text" id="manual-title" placeholder="Contoh: Live Santai Sore" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-rose-500">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-300 mb-1">Link Siaran IDN Live / URL Playback (.m3u8)</label>
+                    <input type="text" id="manual-playback-url" required placeholder="https://www.idn.app/@username/live/slug atau link .m3u8" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-rose-500">
+                    <p class="text-[11px] text-slate-400 mt-1">Anda bisa memasukkan link website IDN App langsung (misal: <code>https://www.idn.app/@.../live/...</code>) atau link langsung HLS .m3u8.</p>
+                </div>
+
+                <div class="flex justify-end space-x-2 pt-2">
+                    <button type="button" onclick="closeManualRecordModal()" class="px-3 py-2 text-xs text-slate-400 hover:text-white">Batal</button>
+                    <button type="submit" class="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-lg text-xs font-medium">Mulai Merekam</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Add Member Modal -->
+    <div id="add-member-modal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm hidden">
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-md p-5 shadow-2xl mx-4">
+            <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+                <h3 class="text-sm font-semibold text-white flex items-center space-x-2">
+                    <i class="fa-solid fa-user-plus text-rose-500"></i>
+                    <span>Tambah ke Watchlist</span>
+                </h3>
+                <button onclick="closeAddMemberModal()" class="text-slate-400 hover:text-white">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+
+            <form onsubmit="submitAddMember(event)" class="space-y-3 mt-4">
+                <div>
+                    <label class="block text-xs font-medium text-slate-300 mb-1">Nama Lengkap</label>
+                    <input type="text" id="add-mem-name" required placeholder="Contoh: Freya Jayawardana" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-rose-500">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-300 mb-1">Nama Panggilan (Nickname)</label>
+                    <input type="text" id="add-mem-nick" placeholder="Contoh: Freya" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-rose-500">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-300 mb-1">IDN App Username / Handle</label>
+                    <input type="text" id="add-mem-username" required placeholder="Contoh: jkt48-freya" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-rose-500">
+                    <p class="text-[11px] text-slate-500 mt-0.5">Username pembuat konten di website/aplikasi IDN.</p>
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-300 mb-1">Generasi / Kategori</label>
+                    <input type="text" id="add-mem-gen" placeholder="Contoh: Gen 7" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-rose-500">
+                </div>
+                <div class="flex items-center space-x-2 pt-2">
+                    <input type="checkbox" id="add-mem-auto" class="rounded bg-slate-800 border-slate-700 text-rose-600 focus:ring-rose-500">
+                    <label for="add-mem-auto" class="text-xs text-slate-300">Langsung aktifkan Auto-Record untuk member ini</label>
+                </div>
+
+                <div class="flex justify-end space-x-2 pt-3">
+                    <button type="button" onclick="closeAddMemberModal()" class="px-3 py-2 text-xs text-slate-400 hover:text-white">Batal</button>
+                    <button type="submit" class="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-lg text-xs font-medium">Simpan Member</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Notification Toast -->
+    <div id="toast-container" class="fixed bottom-5 right-5 z-50 flex flex-col space-y-2 pointer-events-none"></div>
+
+    <!-- Application JavaScript -->
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
